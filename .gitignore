@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+
+# Virtual environments (never commit these)
+venv/
+.venv/
+
+# OS/editor junk
+.DS_Store
+.idea/
+.vscode/

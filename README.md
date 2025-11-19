@@ -159,9 +159,9 @@ Supplementsrx_AI-main/
 ├── start_server.bat                   # Windows server startup script
 ├── .env                               # Environment variables (Neo4j, API keys)
 │
-├── config/                            # Configuration module
+├── config/                            # Configuration settings
 │   ├── __init__.py
-│   └── config.py                      # Configuration settings
+│   └── config.py
 │
 ├── src/                               # Main source code
 │   ├── __init__.py
@@ -173,8 +173,8 @@ Supplementsrx_AI-main/
 │   │
 │   ├── embeddings/                    # Vector embeddings module
 │   │   ├── __init__.py
-│   │   ├── build_store.py             # Build embedding store from processed data
-│   │   └── semantic_search.py         # Semantic search using embeddings
+│   │   ├── build_store.py             # Build embedding store
+│   │   └── semantic_search.py         # Semantic search
 │   │
 │   ├── knowledge_graph/               # Neo4j knowledge graph module
 │   │   ├── __init__.py
@@ -185,47 +185,40 @@ Supplementsrx_AI-main/
 │   │
 │   ├── preprocessing/                 # Data preprocessing
 │   │   ├── __init__.py
-│   │   └── structure_extractor.py     # Extract structured data from raw JSON
+│   │   └── structure_extractor.py     # Structured data extractor
 │   │
 │   ├── rag/                           # RAG pipeline
 │   │   ├── __init__.py
 │   │   ├── pipeline.py                # Original RAG pipeline (legacy)
-│   │   └── unified_pipeline.py        # Unified RAG pipeline (Neo4j + embeddings)
+│   │   └── unified_pipeline.py        # Unified RAG (Embeddings + Neo4j)
 │   │
-│   ├── scrapers/                      # Web scraping
+│   ├── scrapers/                      # Web scraping tools
 │   │   ├── __init__.py
-│   │   └── natmed_scraper_accordion.py # Natural Medicines scraper
+│   │   └── natmed_scraper_accordion.py
 │   │
 │   └── ui/                            # Frontend
 │       ├── __init__.py
-│       ├── index.html                 # Main HTML file
-│       ├── app.js                     # Frontend JavaScript
-│       └── styles.css                 # CSS styles
+│       ├── index.html
+│       ├── app.js
+│       └── styles.css
 │
 ├── data/                              # Data directory
-│   ├── raw/                           # Raw scraped data (25+ JSON files)
-│   │
-│   │
-│   ├── processed/                     # Processed/structured data (25 JSON files)
-│   │ 
-│   │
-│   ├── embeddings/                    # Vector embeddings
-│   │   └── embedding_store.json       # Pre-computed embeddings store
-│   │
-│   └── neo4j_kg/                      # Neo4j knowledge graph exports
-│       ├── schema.cypher              # Database schema
-│       ├── supplements_kg.cypher      # Cypher export
-│       └── supplements_kg.graphml     # GraphML export
+│   ├── raw/                           # Raw scraped JSON files
+│   ├── processed/                     # Processed structured JSON files
+│   ├── embeddings/                    # Embedding store
+│   │   └── embedding_store.json
+│   └── neo4j_kg/                      # Knowledge graph exports
+│       ├── schema.cypher
+│       ├── supplements_kg.cypher
+│       └── supplements_kg.graphml
 │
-├── tests/                             # Test and evaluation files
+├── tests/                             # Test and evaluation scripts
 │   ├── __init__.py
 │   ├── metrics.py                     # Evaluation metrics (F1, nDCG, Groundedness)
 │   ├── evaluate.py                    # Evaluation script
-│   ├── test_queries.json              # Test dataset with ground truth
-│   └── evaluation_results.json        # Evaluation results output
+│   ├── test_queries.json              # Evaluation dataset
+│   └── evaluation_results.json        # Saved results
 │
-├── venv/                              # Python virtual environment (excluded from version control)
-│               
+├── venv/                              # Python virtual environment
 │
-└── env/                               # Environment-related C files (system files)
-
+└── env/                               # System environment C files

@@ -1,12 +1,20 @@
 import os, json, glob
+from pathlib import Path
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
 
 load_dotenv()
 URI = os.getenv("NEO4J_URI", "bolt://localhost:7688")
-USER = os.getenv("NEO4J_USER", "neo4j")
+USER = os.getenv("NEO4J_USERNAME") or os.getenv("NEO4J_USER", "neo4j")
 PASSWORD = os.getenv("NEO4J_PASSWORD", "supplements_pass")
-DATA_DIR = os.getenv("DATA_DIR")
+
+# Default to processed data directory if DATA_DIR not set
+if os.getenv("DATA_DIR"):
+    DATA_DIR = os.getenv("DATA_DIR")
+else:
+    # Default to data/processed relative to project root
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    DATA_DIR = str(PROJECT_ROOT / "data" / "processed")
 
 driver = GraphDatabase.driver(URI, auth=(USER, PASSWORD))
 

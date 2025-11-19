@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 
 from src.rag.unified_pipeline import UnifiedRAGPipeline
+from tests.metrics import RAGEvaluator
 
 app = FastAPI(title="SupplementsRx Unified RAG API", version="2.0.0")
 
@@ -201,6 +202,101 @@ async def get_accuracy_reports():
         "total": len(accuracy_reports_store),
         "reports": accuracy_reports_store[-100:],  # Last 100 reports
     }
+
+
+class EvaluationRequest(BaseModel):
+    question: str
+    ground_truth: Optional[Dict[str, Any]] = None
+
+
+class EvaluationResponse(BaseModel):
+    question: str
+    answer: str
+    diabetes_relevance_f1_macro: float
+    ndcg_at_k: float
+    groundedness_score: float
+    metrics: Dict[str, float]
+
+
+class BatchEvaluationRequest(BaseModel):
+    queries: List[Dict[str, Any]]
+    ndcg_k: Optional[int] = 5
+
+
+@app.post("/api/evaluate", response_model=EvaluationResponse)
+async def evaluate_single(payload: EvaluationRequest):
+    """
+    Evaluate a single query-response pair.
+    
+    Returns evaluation metrics:
+    - Diabetes relevance F1 (macro)
+    - nDCG@k
+    - Groundedness (faithfulness) score
+    """
+    try:
+        # Run pipeline
+        result = pipeline.run(payload.question)
+        
+        # Convert sources to dict format
+        sources = []
+        for source in result.sources:
+            sources.append({
+                "source_type": source.source_type,
+                "supplement_name": source.supplement_name,
+                "section": source.section,
+                "text": source.text,
+                "source_url": source.source_url,
+                "score": source.score,
+                "metadata": source.metadata
+            })
+        
+        # Evaluate
+        evaluator = RAGEvaluator(ndcg_k=5)
+        eval_result = evaluator.evaluate(
+            question=payload.question,
+            answer=result.answer,
+            sources=sources,
+            ground_truth=payload.ground_truth
+        )
+        
+        return EvaluationResponse(
+            question=eval_result.question,
+            answer=eval_result.answer,
+            diabetes_relevance_f1_macro=eval_result.diabetes_relevance_f1,
+            ndcg_at_k=eval_result.ndcg_at_k,
+            groundedness_score=eval_result.groundedness_score,
+            metrics=eval_result.metrics
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(e),
+                "type": e.__class__.__name__,
+            },
+        )
+
+
+@app.post("/api/evaluate-batch")
+async def evaluate_batch(payload: BatchEvaluationRequest):
+    """
+    Evaluate a batch of queries.
+    
+    Returns aggregated metrics across all queries.
+    """
+    try:
+        evaluator = RAGEvaluator(ndcg_k=payload.ndcg_k or 5)
+        results = evaluator.evaluate_batch(payload.queries, pipeline)
+        
+        return results
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(e),
+                "type": e.__class__.__name__,
+            },
+        )
 
 
 @app.on_event("shutdown")

@@ -43,7 +43,7 @@ except Exception as e:
 
 # Neo4j connection
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7688")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_USER = os.getenv("NEO4J_USERNAME") or os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "supplements_pass")
 
 @dataclass
@@ -94,6 +94,17 @@ class UnifiedRAGPipeline:
                 NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)
             )
             logger.info("Neo4j connection established")
+            
+            # Test connection and get available supplements
+            try:
+                with self.neo4j_driver.session() as session:
+                    result = session.run("MATCH (s:Supplement) RETURN count(s) as count")
+                    count = result.single()["count"]
+                    logger.info(f"Neo4j database contains {count} Supplement nodes")
+                    if count == 0:
+                        logger.warning("⚠️  No supplements found in Neo4j! Make sure to run load_kg.py to populate the database.")
+            except Exception as e:
+                logger.warning(f"Could not verify Neo4j data: {e}")
         except Exception as e:
             logger.warning(f"Could not connect to Neo4j: {e}")
             self.neo4j_driver = None
@@ -127,91 +138,155 @@ class UnifiedRAGPipeline:
         Uses a flexible query that searches for supplements, conditions, and relationships.
         """
         if not self.neo4j_driver:
+            logger.warning("Neo4j driver not available, skipping KG query")
             return []
 
-        # Extract key terms from question (simple approach)
+        # Extract key terms from question (improved approach)
         question_lower = question.lower()
         
         # Try to identify if question is about a specific supplement
         supplements = []
         conditions = []
         
-        # Simple keyword matching (can be improved with NER)
-        common_supplements = [
-            "berberine", "chromium", "magnesium", "vitamin d", "vitamin b12",
+        # Expanded supplement list with variations
+        supplement_keywords = [
+            "berberine", "chromium", "magnesium", "vitamin d", "vitamin b12", "vitamin b 12",
             "zinc", "fish oil", "turmeric", "curcumin", "green tea", "ginger",
-            "fenugreek", "gymnema", "bitter melon", "milk thistle", "resveratrol"
+            "fenugreek", "gymnema", "bitter melon", "milk thistle", "resveratrol",
+            "alpha-lipoic acid", "alpha lipoic acid", "cinnamon", "vanadium",
+            "inositol", "banaba", "amla", "indian gooseberry", "l-arginine",
+            "l-arginine", "l-carnitine", "taurine", "vitamin e", "biotin", "niacin",
+            "alpha lipoic", "vitamin b-12"
         ]
         
-        for supp in common_supplements:
-            if supp in question_lower:
+        # Also try to get supplement names from Neo4j dynamically (for better matching)
+        try:
+            with self.neo4j_driver.session() as session:
+                result = session.run("MATCH (s:Supplement) RETURN toLower(s.name) as name LIMIT 50")
+                db_supplements = [record["name"] for record in result if record.get("name")]
+                # Check if any database supplement names are in the question
+                for db_supp in db_supplements:
+                    if db_supp and db_supp in question_lower and db_supp not in supplements:
+                        supplements.append(db_supp)
+                        logger.debug(f"Found supplement '{db_supp}' in question from Neo4j database")
+        except Exception as e:
+            logger.debug(f"Could not fetch supplements from Neo4j for matching: {e}")
+        
+        # Check hardcoded keywords
+        for supp in supplement_keywords:
+            if supp in question_lower and supp not in supplements:
                 supplements.append(supp)
         
         # Common conditions
-        common_conditions = [
+        condition_keywords = [
             "diabetes", "diabetic", "blood sugar", "glucose", "hypertension",
-            "high blood pressure", "cholesterol", "hyperlipidemia"
+            "high blood pressure", "cholesterol", "hyperlipidemia", "hba1c",
+            "a1c", "glycated hemoglobin", "insulin", "metformin", "prediabetes"
         ]
         
-        for cond in common_conditions:
+        for cond in condition_keywords:
             if cond in question_lower:
                 conditions.append(cond)
 
         results = []
         
+        logger.info(f"Querying Neo4j for question: {question}")
+        logger.info(f"Detected supplements: {supplements}, conditions: {conditions}")
+        
         with self.neo4j_driver.session() as session:
             # Query 1: If supplement mentioned, get supplement details
             if supplements:
                 for supp in supplements:
-                    cypher = """
-                    MATCH (s:Supplement)
-                    WHERE toLower(s.name) CONTAINS $supplement
-                    OPTIONAL MATCH (s)-[r:MENTIONED_FOR|DOSAGE_GUIDELINE_FOR]->(c:Condition)
-                    OPTIONAL MATCH (s)-[i:INTERACTS_WITH]->(d:Drug)
-                    WITH s, collect(DISTINCT {
-                        condition: c.name,
-                        relationType: type(r),
-                        dosage: r.dosage,
-                        frequency: r.frequency,
-                        duration: r.duration,
-                        notes: r.notes
-                    }) AS conditions,
-                    collect(DISTINCT {
-                        drug: d.name,
-                        severity: i.severity,
-                        description: i.description
-                    }) AS interactions
-                    RETURN s.name AS supplement,
-                           s.overview_text AS overview,
-                           s.effectiveness_text AS effectiveness,
-                           s.safety_text AS safety,
-                           s.dosing_text AS dosing,
-                           s.interactions_text AS interactions_text,
-                           s.mechanism_text AS mechanism,
-                           conditions,
-                           interactions,
-                           s.source_url AS source_url
-                    LIMIT 1
-                    """
-                    try:
-                        result = session.run(cypher, supplement=supp.lower())
-                        for record in result:
-                            # Format the result
-                            kg_data = {
-                                "supplement": record.get("supplement"),
-                                "overview": record.get("overview", ""),
-                                "effectiveness": record.get("effectiveness", ""),
-                                "safety": record.get("safety", ""),
-                                "dosing": record.get("dosing", ""),
-                                "interactions_text": record.get("interactions_text", ""),
-                                "mechanism": record.get("mechanism", ""),
-                                "conditions": record.get("conditions", []),
-                                "interactions": record.get("interactions", []),
-                                "source_url": record.get("source_url"),
-                            }
-                            results.append(kg_data)
-                    except Exception as e:
-                        print(f"Error querying Neo4j: {e}")
+                    # Try multiple query strategies for better matching
+                    cypher_queries = [
+                        # Exact match (case-insensitive)
+                        """
+                        MATCH (s:Supplement)
+                        WHERE toLower(s.name) = $supplement
+                        OPTIONAL MATCH (s)-[r:MENTIONED_FOR|DOSAGE_GUIDELINE_FOR]->(c:Condition)
+                        OPTIONAL MATCH (s)-[i:INTERACTS_WITH]->(d:Drug)
+                        WITH s, collect(DISTINCT {
+                            condition: c.name,
+                            relationType: type(r),
+                            dosage: r.dosage,
+                            frequency: r.frequency,
+                            duration: r.duration,
+                            notes: r.notes
+                        }) AS conditions,
+                        collect(DISTINCT {
+                            drug: d.name,
+                            severity: i.severity,
+                            description: i.description
+                        }) AS interactions
+                        RETURN s.name AS supplement,
+                               s.overview_text AS overview,
+                               s.effectiveness_text AS effectiveness,
+                               s.safety_text AS safety,
+                               s.dosing_text AS dosing,
+                               s.interactions_text AS interactions_text,
+                               s.mechanism_text AS mechanism,
+                               conditions,
+                               interactions,
+                               s.source_url AS source_url
+                        LIMIT 1
+                        """,
+                        # Contains match (fallback)
+                        """
+                        MATCH (s:Supplement)
+                        WHERE toLower(s.name) CONTAINS $supplement
+                        OPTIONAL MATCH (s)-[r:MENTIONED_FOR|DOSAGE_GUIDELINE_FOR]->(c:Condition)
+                        OPTIONAL MATCH (s)-[i:INTERACTS_WITH]->(d:Drug)
+                        WITH s, collect(DISTINCT {
+                            condition: c.name,
+                            relationType: type(r),
+                            dosage: r.dosage,
+                            frequency: r.frequency,
+                            duration: r.duration,
+                            notes: r.notes
+                        }) AS conditions,
+                        collect(DISTINCT {
+                            drug: d.name,
+                            severity: i.severity,
+                            description: i.description
+                        }) AS interactions
+                        RETURN s.name AS supplement,
+                               s.overview_text AS overview,
+                               s.effectiveness_text AS effectiveness,
+                               s.safety_text AS safety,
+                               s.dosing_text AS dosing,
+                               s.interactions_text AS interactions_text,
+                               s.mechanism_text AS mechanism,
+                               conditions,
+                               interactions,
+                               s.source_url AS source_url
+                        LIMIT 1
+                        """
+                    ]
+                    
+                    for cypher in cypher_queries:
+                        try:
+                            result = session.run(cypher, supplement=supp.lower())
+                            record = result.single()
+                            if record:
+                                # Format the result
+                                kg_data = {
+                                    "supplement": record.get("supplement"),
+                                    "overview": record.get("overview", ""),
+                                    "effectiveness": record.get("effectiveness", ""),
+                                    "safety": record.get("safety", ""),
+                                    "dosing": record.get("dosing", ""),
+                                    "interactions_text": record.get("interactions_text", ""),
+                                    "mechanism": record.get("mechanism", ""),
+                                    "conditions": record.get("conditions", []),
+                                    "interactions": record.get("interactions", []),
+                                    "source_url": record.get("source_url"),
+                                }
+                                results.append(kg_data)
+                                logger.info(f"Found supplement in Neo4j: {kg_data.get('supplement')}")
+                                break  # Found a match, no need to try other queries
+                        except Exception as e:
+                            logger.warning(f"Error querying Neo4j for supplement '{supp}': {e}")
+                            continue
 
             # Query 2: If condition mentioned, get supplements for that condition
             if conditions:
@@ -239,11 +314,16 @@ class UnifiedRAGPipeline:
                            type(r) AS relationType,
                            dosage_guidelines,
                            interactions,
-                           s.source_url AS source_url
+                           s.source_url AS source_url,
+                           s.overview_text AS overview,
+                           s.effectiveness_text AS effectiveness,
+                           s.safety_text AS safety,
+                           s.dosing_text AS dosing
                     LIMIT $limit
                     """
                     try:
                         result = session.run(cypher, condition=cond.lower(), limit=self.top_k_kg)
+                        count = 0
                         for record in result:
                             kg_data = {
                                 "condition": record.get("condition"),
@@ -252,46 +332,104 @@ class UnifiedRAGPipeline:
                                 "dosage_guidelines": record.get("dosage_guidelines", []),
                                 "interactions": record.get("interactions", []),
                                 "source_url": record.get("source_url"),
+                                "overview": record.get("overview", ""),
+                                "effectiveness": record.get("effectiveness", ""),
+                                "safety": record.get("safety", ""),
+                                "dosing": record.get("dosing", ""),
                             }
                             results.append(kg_data)
+                            count += 1
+                        if count > 0:
+                            logger.info(f"Found {count} supplements for condition '{cond}' in Neo4j")
                     except Exception as e:
-                        print(f"Error querying Neo4j: {e}")
+                        logger.warning(f"Error querying Neo4j for condition '{cond}': {e}")
 
             # Query 3: General search if no specific supplement/condition found
+            # Also try general search even if we found supplements/conditions to get more context
             if not supplements and not conditions:
+                # Extract key words from question (longer words are usually more meaningful)
+                query_words = " ".join([w for w in question.split() if len(w) > 3][:5])
+                if query_words:
+                    cypher = """
+                        MATCH (s:Supplement)
+                        WHERE toLower(s.overview_text) CONTAINS toLower($query)
+                             OR toLower(s.effectiveness_text) CONTAINS toLower($query)
+                             OR toLower(s.safety_text) CONTAINS toLower($query)
+                             OR toLower(s.dosing_text) CONTAINS toLower($query)
+                             OR toLower(s.name) CONTAINS toLower($query)
+                        RETURN s.name AS supplement,
+                               s.overview_text AS overview,
+                               s.effectiveness_text AS effectiveness,
+                               s.safety_text AS safety,
+                               s.dosing_text AS dosing,
+                               s.source_url AS source_url
+                        LIMIT $limit
+                        """
+                    try:
+                        result = session.run(cypher, query=query_words, limit=self.top_k_kg)
+                        count = 0
+                        for record in result:
+                            kg_data = {
+                                "supplement": record.get("supplement"),
+                                "overview": record.get("overview", ""),
+                                "effectiveness": record.get("effectiveness", ""),
+                                "safety": record.get("safety", ""),
+                                "dosing": record.get("dosing", ""),
+                                "source_url": record.get("source_url"),
+                            }
+                            results.append(kg_data)
+                            count += 1
+                        if count > 0:
+                            logger.info(f"Found {count} supplements via general search in Neo4j")
+                    except Exception as e:
+                        logger.warning(f"Error in general Neo4j search: {e}")
+            
+            # Query 4: If we still have no results, try to get any supplements related to diabetes
+            if not results and ("diabetes" in question_lower or "diabetic" in question_lower):
                 cypher = """
-                    MATCH (s:Supplement)
-                    WHERE s.overview_text CONTAINS $query
-                         OR s.effectiveness_text CONTAINS $query
-                         OR s.safety_text CONTAINS $query
-                    RETURN s.name AS supplement,
+                    MATCH (c:Condition)
+                    WHERE toLower(c.name) CONTAINS 'diabetes' OR toLower(c.name) CONTAINS 'diabetic'
+                    MATCH (s:Supplement)-[r:MENTIONED_FOR|DOSAGE_GUIDELINE_FOR]->(c)
+                    RETURN DISTINCT s.name AS supplement,
                            s.overview_text AS overview,
                            s.effectiveness_text AS effectiveness,
                            s.safety_text AS safety,
-                           s.source_url AS source_url
+                           s.dosing_text AS dosing,
+                           s.source_url AS source_url,
+                           c.name AS condition
                     LIMIT $limit
-                    """
+                """
                 try:
-                    # Extract key words from question
-                    query_words = " ".join([w for w in question.split() if len(w) > 3][:3])
-                    result = session.run(cypher, query=query_words, limit=self.top_k_kg)
+                    result = session.run(cypher, limit=self.top_k_kg)
+                    count = 0
                     for record in result:
                         kg_data = {
                             "supplement": record.get("supplement"),
+                            "condition": record.get("condition"),
                             "overview": record.get("overview", ""),
                             "effectiveness": record.get("effectiveness", ""),
                             "safety": record.get("safety", ""),
+                            "dosing": record.get("dosing", ""),
                             "source_url": record.get("source_url"),
                         }
                         results.append(kg_data)
+                        count += 1
+                    if count > 0:
+                        logger.info(f"Found {count} diabetes-related supplements via fallback query in Neo4j")
                 except Exception as e:
-                    print(f"Error querying Neo4j: {e}")
+                    logger.warning(f"Error in fallback Neo4j query: {e}")
+
+        if not results:
+            logger.warning(f"No results found in Neo4j for question: {question}")
+        else:
+            logger.info(f"Found {len(results)} result(s) in Neo4j")
 
         return results
 
     def _format_kg_context(self, kg_results: List[Dict[str, Any]]) -> str:
         """Format Neo4j results into readable context"""
         if not kg_results:
+            logger.warning("No KG results to format")
             return "No information found in knowledge graph."
 
         blocks = []
@@ -304,30 +442,64 @@ class UnifiedRAGPipeline:
             if result.get("condition"):
                 block += f"Condition: {result['condition']}\n"
             
+            # Include text fields (these are important for LLM)
             if result.get("overview"):
-                block += f"Overview: {result['overview'][:500]}...\n"
+                overview_text = result['overview'].strip()
+                if overview_text:
+                    block += f"Overview: {overview_text[:800]}{'...' if len(overview_text) > 800 else ''}\n"
             
             if result.get("effectiveness"):
-                block += f"Effectiveness: {result['effectiveness'][:500]}...\n"
+                eff_text = result['effectiveness'].strip()
+                if eff_text:
+                    block += f"Effectiveness: {eff_text[:800]}{'...' if len(eff_text) > 800 else ''}\n"
             
             if result.get("safety"):
-                block += f"Safety: {result['safety'][:500]}...\n"
+                safety_text = result['safety'].strip()
+                if safety_text:
+                    block += f"Safety: {safety_text[:800]}{'...' if len(safety_text) > 800 else ''}\n"
             
             if result.get("dosing"):
-                block += f"Dosing: {result['dosing'][:300]}...\n"
+                dosing_text = result['dosing'].strip()
+                if dosing_text:
+                    block += f"Dosing: {dosing_text[:500]}{'...' if len(dosing_text) > 500 else ''}\n"
             
-            if result.get("dosage_guidelines"):
-                block += f"Dosage Guidelines: {json.dumps(result['dosage_guidelines'], indent=2)}\n"
+            if result.get("interactions_text"):
+                interactions_text = result['interactions_text'].strip()
+                if interactions_text:
+                    block += f"Drug Interactions Text: {interactions_text[:500]}{'...' if len(interactions_text) > 500 else ''}\n"
             
-            if result.get("interactions"):
-                block += f"Drug Interactions: {json.dumps(result['interactions'], indent=2)}\n"
+            if result.get("mechanism"):
+                mechanism_text = result['mechanism'].strip()
+                if mechanism_text:
+                    block += f"Mechanism: {mechanism_text[:500]}{'...' if len(mechanism_text) > 500 else ''}\n"
+            
+            # Structured data
+            if result.get("dosage_guidelines") and isinstance(result['dosage_guidelines'], list) and len(result['dosage_guidelines']) > 0:
+                # Filter out None/empty entries
+                valid_guidelines = [dg for dg in result['dosage_guidelines'] if dg and isinstance(dg, dict) and any(dg.values())]
+                if valid_guidelines:
+                    block += f"Dosage Guidelines: {json.dumps(valid_guidelines, indent=2)}\n"
+            
+            if result.get("interactions") and isinstance(result['interactions'], list) and len(result['interactions']) > 0:
+                # Filter out None/empty entries
+                valid_interactions = [inter for inter in result['interactions'] if inter and isinstance(inter, dict) and any(inter.values())]
+                if valid_interactions:
+                    block += f"Drug Interactions (Structured): {json.dumps(valid_interactions, indent=2)}\n"
+            
+            if result.get("conditions") and isinstance(result['conditions'], list) and len(result['conditions']) > 0:
+                # Filter out None/empty entries
+                valid_conditions = [c for c in result['conditions'] if c and isinstance(c, dict) and any(c.values())]
+                if valid_conditions:
+                    block += f"Related Conditions: {json.dumps(valid_conditions, indent=2)}\n"
             
             if result.get("source_url"):
                 block += f"Source: {result['source_url']}\n"
             
             blocks.append(block)
         
-        return "\n\n---\n\n".join(blocks)
+        formatted = "\n\n---\n\n".join(blocks)
+        logger.info(f"Formatted KG context: {len(formatted)} characters")
+        return formatted
 
     def _format_embedding_context(self, embedding_hits: List[Dict[str, Any]]) -> str:
         """Format vector embedding results into readable context"""
@@ -384,30 +556,40 @@ class UnifiedRAGPipeline:
         
         return False
 
-    def _call_llm(self, question: str, embedding_context: str, kg_context: str) -> Dict[str, str]:
+    def _call_llm(self, question: str, embedding_context: str, kg_context: str, has_embedding_info: bool = None, has_kg_info: bool = None) -> Dict[str, str]:
         """
         Call LLM to curate and combine information from both sources.
         Returns dict with 'answer', 'reasoning', 'used_llm_knowledge', 'sources_used'
         """
         
-        # Determine if we have sufficient information
-        has_embedding_info = len(embedding_context) > 100 and "No information" not in embedding_context
-        has_kg_info = len(kg_context) > 100 and "No information" not in kg_context
+        # Determine if we have sufficient information (if not provided)
+        if has_embedding_info is None:
+            has_embedding_info = len(embedding_context) > 100 and "No information" not in embedding_context
+        if has_kg_info is None:
+            has_kg_info = len(kg_context) > 100 and "No information" not in kg_context
         
         # Check if this is a yes/no question
         is_yes_no = self._is_yes_no_question(question)
         
-        system_prompt = """You are an expert medical assistant that answers diabetes-related questions based on the results provided from the vector embeddings and neo4j knowledge graph methods. 
+        system_prompt = """You are an expert medical assistant that answers diabetes-related questions based on the results provided from the vector embeddings and neo4j knowledge graph methods.
+
+IMPORTANT: You will receive information from TWO sources:
+1. Vector Embeddings (Semantic Search) - labeled as "Information from Vector Embeddings"
+2. Knowledge Graph (Structured Relationships) - labeled as "Information from Knowledge Graph"
+
+You MUST use information from BOTH sources when available. If one source says "No information found", you should still use the other source. 
 
 Your role:
-1. Synthesize information from both vector embeddings (semantic search) and knowledge graph (structured relationships)
-2. First directly mention the fact, then mention the context behind that fact based on these 2 method's results
-3. CRITICAL: You must explicitly mention exactly what information is taken from vector embeddings and what is taken from knowledge graph. For each piece of information in your answer, clearly indicate its source using inline citations [VE] for vector embeddings and [KG] for knowledge graph
-4. Also cite all sources at the end with detailed breakdown, exactly mentioning which specific information came from knowledge graph and which came from vector embeddings
-5. Provide clear, accurate, and evidence-based answers (tone should be similar to how a human says it)
-6. Always include a precaution notice about consulting healthcare providers
-7. Use LLM knowledge only when the information from both the sources are not enough to answer the query
-8. The reasoning should be in third person context tone, like "this information...." and not "i did this" or "i did that"
+1. Synthesize information from BOTH vector embeddings (semantic search) AND knowledge graph (structured relationships) when both are available
+2. If only one source has information, use that source. If both have information, combine them intelligently.
+3. First directly mention the fact, then mention the context behind that fact based on these 2 method's results
+4. CRITICAL: You must explicitly mention exactly what information is taken from vector embeddings and what is taken from knowledge graph. For each piece of information in your answer, clearly indicate its source using inline citations [VE] for vector embeddings and [KG] for knowledge graph
+5. Also cite all sources at the end with detailed breakdown, exactly mentioning which specific information came from knowledge graph and which came from vector embeddings
+6. Provide clear, accurate, and evidence-based answers (tone should be similar to how a human says it)
+7. Always include a precaution notice about consulting healthcare providers
+8. Use LLM knowledge only when the information from BOTH sources are insufficient to answer the query
+9. The reasoning should be in third person context tone, like "this information...." and not "i did this" or "i did that"
+10. If you see "No information found in knowledge graph" or "No information found in vector embeddings", that means that particular source had no relevant data - use the other source if available
 
 Response format:
 - Provide a clear, structured answer that first states the fact, then provides context
@@ -417,6 +599,14 @@ Response format:
 - End with a precaution notice
 - CRITICAL: If the question is a yes/no question (starts with Is, Are, Do, Does, Can, Should, etc.), your answer MUST start with either Yes or No followed by a comma, then provide the explanation. For example: Yes, [explanation] or No, [explanation]"""
 
+        # Ensure both contexts are included even if one is empty
+        if not has_kg_info:
+            logger.warning("No knowledge graph information available - LLM will rely on vector embeddings only")
+        if not has_embedding_info:
+            logger.warning("No vector embedding information available - LLM will rely on knowledge graph only")
+        
+        # Always include both contexts in the prompt, even if empty
+        # This ensures the LLM knows what sources were checked
         user_prompt = f"""User Question: {question}
 
 Information from Vector Embeddings (Semantic Search):
@@ -432,12 +622,14 @@ Please provide:
 4. A precaution notice
 
 CRITICAL REQUIREMENTS:
-- Only use your general knowledge if both sources (vector embeddings and knowledge graph) are insufficient to answer the query
+- Use information from BOTH sources when available. If one source says "No information found", use the other source.
+- Only use your general knowledge if BOTH sources are insufficient (i.e., both say "No information found")
 - In your answer, cite sources inline using brackets: [KG] for knowledge graph, [VE] for vector embeddings
 - You MUST explicitly mention exactly what information came from vector embeddings and what came from knowledge graph
+- If a source says "No information found", do NOT cite it - only cite sources that actually provided information
 - At the end of your answer, provide a clear breakdown section that lists:
-  * "Information from Vector Embeddings: [exact list of what information came from VE]"
-  * "Information from Knowledge Graph: [exact list of what information came from KG]"
+  * "Information from Vector Embeddings: [exact list of what information came from VE, or 'None' if no VE info was available]"
+  * "Information from Knowledge Graph: [exact list of what information came from KG, or 'None' if no KG info was available]"
 - Be specific and detailed about which facts, data points, or statements originated from which source
 {f"- CRITICAL FOR YES/NO QUESTIONS: This is a yes/no question. Your answer MUST start with either 'Yes' or 'No' followed by a comma, then provide the explanation. Example: 'Yes, [explanation with citations]' or 'No, [explanation with citations]'. Do NOT start with any other word." if is_yes_no else ""}
 
@@ -616,8 +808,14 @@ Format your response as JSON with these keys:
         embedding_context = self._format_embedding_context(embedding_hits)
         kg_context = self._format_kg_context(kg_results)
         
-        # 4. Call LLM to curate
-        llm_result = self._call_llm(question, embedding_context, kg_context)
+        # Log context availability
+        has_embedding_info = len(embedding_context) > 100 and "No information" not in embedding_context
+        has_kg_info = len(kg_context) > 100 and "No information" not in kg_context
+        logger.info(f"Context availability - Embeddings: {has_embedding_info}, KG: {has_kg_info}")
+        logger.info(f"Embedding context length: {len(embedding_context)}, KG context length: {len(kg_context)}")
+        
+        # 4. Call LLM to curate (pass context availability flags)
+        llm_result = self._call_llm(question, embedding_context, kg_context, has_embedding_info, has_kg_info)
         
         # 5. Build source list
         sources = []

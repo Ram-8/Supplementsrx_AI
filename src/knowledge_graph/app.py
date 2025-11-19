@@ -23,7 +23,7 @@ def run_safe(cypher: str, params: dict):
 # Load env
 load_dotenv()
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7688")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_USER = os.getenv("NEO4J_USERNAME") or os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "supplements_pass")
 
 # Neo4j driver

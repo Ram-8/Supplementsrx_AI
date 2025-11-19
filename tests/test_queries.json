@@ -1,0 +1,83 @@
+[
+  {
+    "question": "Is berberine helpful for type 2 diabetes?",
+    "ground_truth": {
+      "keywords": ["diabetes", "type 2 diabetes", "blood sugar", "glucose"],
+      "supplements": ["berberine"],
+      "relevance": [1.0, 0.9, 0.8, 0.7, 0.6]
+    }
+  },
+  {
+    "question": "What supplements help with diabetes?",
+    "ground_truth": {
+      "keywords": ["diabetes", "blood sugar"],
+      "supplements": ["berberine", "chromium", "magnesium", "cinnamon"],
+      "relevance": [1.0, 0.95, 0.9, 0.85, 0.8]
+    }
+  },
+  {
+    "question": "Can I take chromium with metformin?",
+    "ground_truth": {
+      "keywords": ["diabetes", "metformin", "blood sugar"],
+      "supplements": ["chromium"],
+      "relevance": [1.0, 0.9, 0.8, 0.7, 0.6]
+    }
+  },
+  {
+    "question": "What is the recommended dosage of magnesium for diabetes?",
+    "ground_truth": {
+      "keywords": ["diabetes", "dosage", "blood sugar"],
+      "supplements": ["magnesium"],
+      "relevance": [1.0, 0.9, 0.85, 0.8, 0.75]
+    }
+  },
+  {
+    "question": "Are there any side effects of berberine?",
+    "ground_truth": {
+      "keywords": ["berberine"],
+      "supplements": ["berberine"],
+      "relevance": [1.0, 0.9, 0.8, 0.7, 0.6]
+    }
+  },
+  {
+    "question": "Does vitamin D help with blood sugar control?",
+    "ground_truth": {
+      "keywords": ["vitamin d", "blood sugar", "glucose"],
+      "supplements": ["vitamin d"],
+      "relevance": [1.0, 0.9, 0.85, 0.8, 0.75]
+    }
+  },
+  {
+    "question": "What are the drug interactions of berberine?",
+    "ground_truth": {
+      "keywords": ["berberine", "drug interactions"],
+      "supplements": ["berberine"],
+      "relevance": [1.0, 0.95, 0.9, 0.85, 0.8]
+    }
+  },
+  {
+    "question": "Is cinnamon effective for lowering blood sugar?",
+    "ground_truth": {
+      "keywords": ["cinnamon", "blood sugar", "glucose"],
+      "supplements": ["cinnamon"],
+      "relevance": [1.0, 0.9, 0.85, 0.8, 0.75]
+    }
+  },
+  {
+    "question": "Can fenugreek help with type 2 diabetes?",
+    "ground_truth": {
+      "keywords": ["fenugreek", "type 2 diabetes", "diabetes"],
+      "supplements": ["fenugreek"],
+      "relevance": [1.0, 0.9, 0.85, 0.8, 0.75]
+    }
+  },
+  {
+    "question": "What supplements should I avoid if I have diabetes?",
+    "ground_truth": {
+      "keywords": ["diabetes", "supplements"],
+      "supplements": [],
+      "relevance": [1.0, 0.9, 0.85, 0.8, 0.75]
+    }
+  }
+]
+

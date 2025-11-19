@@ -1,0 +1,83 @@
+{
+  "total_queries": 10,
+  "diabetes_relevance_f1_macro": {
+    "mean": 0.40413419913419907,
+    "std": 0.1946040622995573,
+    "min": 0.0909090909090909,
+    "max": 0.7
+  },
+  "ndcg_at_k": {
+    "mean": 0.6292748707984573,
+    "std": 0.1317618185400821,
+    "min": 0.4248101884762818,
+    "max": 0.8045900640465551
+  },
+  "groundedness_score": {
+    "mean": 0.6366908925732455,
+    "std": 0.1046202512847465,
+    "min": 0.4,
+    "max": 0.8235294117647058
+  },
+  "detailed_results": [
+    {
+      "question": "Is berberine helpful for type 2 diabetes?",
+      "diabetes_relevance_f1": 0.35,
+      "ndcg_at_k": 0.7625018351928926,
+      "groundedness_score": 0.5810810810810811
+    },
+    {
+      "question": "What supplements help with diabetes?",
+      "diabetes_relevance_f1": 0.17424242424242423,
+      "ndcg_at_k": 0.4326112395581489,
+      "groundedness_score": 0.6714285714285715
+    },
+    {
+      "question": "Can I take chromium with metformin?",
+      "diabetes_relevance_f1": 0.7,
+      "ndcg_at_k": 0.6650357249876695,
+      "groundedness_score": 0.6764705882352942
+    },
+    {
+      "question": "What is the recommended dosage of magnesium for diabetes?",
+      "diabetes_relevance_f1": 0.25396825396825395,
+      "ndcg_at_k": 0.6479037370687506,
+      "groundedness_score": 0.5945945945945945
+    },
+    {
+      "question": "Are there any side effects of berberine?",
+      "diabetes_relevance_f1": 0.5,
+      "ndcg_at_k": 0.6667783574894124,
+      "groundedness_score": 0.7058823529411764
+    },
+    {
+      "question": "Does vitamin D help with blood sugar control?",
+      "diabetes_relevance_f1": 0.7,
+      "ndcg_at_k": 0.6797261036243375,
+      "groundedness_score": 0.619327731092437
+    },
+    {
+      "question": "What are the drug interactions of berberine?",
+      "diabetes_relevance_f1": 0.5,
+      "ndcg_at_k": 0.7419255107816192,
+      "groundedness_score": 0.8235294117647058
+    },
+    {
+      "question": "Is cinnamon effective for lowering blood sugar?",
+      "diabetes_relevance_f1": 0.45,
+      "ndcg_at_k": 0.46686594675890614,
+      "groundedness_score": 0.4
+    },
+    {
+      "question": "Can fenugreek help with type 2 diabetes?",
+      "diabetes_relevance_f1": 0.3222222222222222,
+      "ndcg_at_k": 0.8045900640465551,
+      "groundedness_score": 0.5945945945945945
+    },
+    {
+      "question": "What supplements should I avoid if I have diabetes?",
+      "diabetes_relevance_f1": 0.0909090909090909,
+      "ndcg_at_k": 0.4248101884762818,
+      "groundedness_score": 0.7
+    }
+  ]
+}

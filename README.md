@@ -1,6 +1,4 @@
-##SupplementsRx AI - Unified RAG System
-
-## Overview
+## SupplementsRx AI - Unified RAG System 
 
 This system integrates **Neo4j Knowledge Graph** and **Vector Embeddings** to provide comprehensive, evidence-based answers about dietary supplements. An open-source LLM (Gemini) curates and combines information from both sources.
 

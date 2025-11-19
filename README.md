@@ -149,7 +149,7 @@ Each query includes optional ground truth with:
 - Expected relevance scores
 
 ## File Structure
-
+```
 Supplementsrx_AI-main/
 │
 ├── README.md                          # Project documentation
@@ -220,3 +220,4 @@ Supplementsrx_AI-main/
 ├── venv/                              # Python virtual environment
 │
 └── env/                               # System environment C files
+```
